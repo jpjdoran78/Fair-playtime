@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Fair Playtime App</title>
+    <style>
+        :root { --pitch-green: #2e7d32; --ios-blue: #007aff; --light-gray: #f2f2f7; }
+        body { font-family: -apple-system, sans-serif; margin: 0; background: var(--light-gray); padding-bottom: 80px; }
+        
+        /* Navigation */
+        nav { display: flex; background: #fff; border-bottom: 1px solid #ccc; position: sticky; top: 0; z-index: 100; }
+        nav button { flex: 1; padding: 15px; border: none; background: none; font-weight: 600; color: #8e8e93; }
+        nav button.active { color: var(--ios-blue); border-bottom: 3px solid var(--ios-blue); }
+
+        .view { display: none; padding: 20px; }
+        .view.active { display: block; }
+
+        /* Tactical Pitch */
+        #pitch { 
+            background: var(--pitch-green); height: 380px; border-radius: 12px; 
+            border: 2px solid white; display: flex; flex-direction: column-reverse; position: relative;
+        }
+        .zone { flex: 1; border-top: 1px dashed rgba(255,255,255,0.3); display: flex; justify-content: center; align-items: center; gap: 8px; position: relative; }
+        .zone-label { position: absolute; left: 5px; top: 2px; color: rgba(255,255,255,0.4); font-size: 10px; text-transform: uppercase; }
+
+        /* Player Icons */
+        .player-icon {
+            width: 42px; height: 42px; background: white; border: 2px solid var(--ios-blue);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 13px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+
+        /* Lists */
+        .card { background: white; padding: 12px; border-radius: 8px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .timer { font-size: 32px; font-weight: bold; text-align: center; margin: 10px 0; font-family: monospace; }
+        
+        .att-btn { width: 30px; height: 30px; border-radius: 50%; border: 1px solid #ccc; }
+        .att-btn.present { background: #4caf50; border-color: #2e7d32; }
+
+        .btn-main { width: 100%; padding: 15px; background: var(--ios-blue); color: white; border: none; border-radius: 10px; font-weight: bold; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<nav>
+    <button onclick="showView('setup')" id="tab-setup">Squad</button>
+    <button onclick="showView('training')" id="tab-training">Training</button>
+    <button onclick="showView('match')" id="tab-match" class="active">Match</button>
+</nav>
+
+<div id="setup" class="view">
+    <h3>Squad List</h3>
+    <div style="display:flex; gap:5px;">
+        <input type="text" id="playerName" placeholder="Player Name" style="flex:1; padding:10px;">
+        <button onclick="addPlayer()" style="padding:10px;">Add</button>
+    </div>
+    <div id="squad-list" style="margin-top:15px;"></div>
+</div>
+
+<div id="training" class="view">
+    <h3>Training Attendance</h3>
+    <div id="training-list"></div>
+</div>
+
+<div id="match" class="view active">
+    <div class="timer" id="timer-display">20:00</div>
+    
+    <div id="pitch">
+        <div class="zone" id="zone-Forwards"><span class="zone-label">Forwards</span></div>
+        <div class="zone" id="zone-Midfield"><span class="zone-label">Midfield</span></div>
+        <div class="zone" id="zone-Defense"><span class="zone-label">Defense/GK</span></div>
+    </div>
+
+    <h3 style="margin-top:20px;">Subs (Prioritize top)</h3>
+    <div id="subs-list"></div>
+    <button class="btn-main" onclick="toggleTimer()" id="timer-btn">Start Match</button>
+    <button style="background:none; border:none; color:red; width:100%; margin-top:20px;" onclick="resetMatch()">Reset Match Minutes</button>
+</div>
+
+<script>
+    let players = JSON.parse(localStorage.getItem('fairplay_v1')) || [];
+    let timerVal = 1200;
+    let isRunning = false;
+    let interval;
+
+    function save() { localStorage.setItem('fairplay_v1', JSON.stringify(players)); }
+
+    function showView(id) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        document.getElementById('tab-'+id).classList.add('active');
+        render();
+    }
+
+    function addPlayer() {
+        const name = document.getElementById('playerName').value;
+        if(name) {
+            players.push({ name, mins: 0, tue: false, thu: false, pos: 'Sub', active: true });
+            document.getElementById('playerName').value = '';
+            save(); render();
+        }
+    }
+
+    function toggleTimer() {
+        isRunning = !isRunning;
+        document.getElementById('timer-btn').innerText = isRunning ? "Pause" : "Resume";
+        if(isRunning) {
+            interval = setInterval(() => {
+                timerVal--;
+                players.forEach(p => { if(p.pos !== 'Sub') p.mins += 1/60; });
+                updateDisplay();
+            }, 1000);
+        } else clearInterval(interval);
+    }
+
+    function updateDisplay() {
+        const m = Math.floor(timerVal / 60);
+        const s = timerVal % 60;
+        document.getElementById('timer-display').innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
+    }
+
+    function movePlayer(name) {
+        const p = players.find(x => x.name === name);
+        if(p.pos === 'Sub') {
+            const newPos = prompt("Enter Position: 1-Defense, 2-Midfield, 3-Forward");
+            p.pos = newPos === '1' ? 'Defense' : newPos === '2' ? 'Midfield' : 'Forwards';
+        } else {
+            p.pos = 'Sub';
+        }
+        save(); render();
+    }
+
+    function resetMatch() {
+        if(confirm("Reset all play time to zero?")) {
+            players.forEach(p => { p.mins = 0; p.pos = 'Sub'; });
+            timerVal = 1200;
+            save(); render();
+        }
+    }
+
+    function render() {
+        // Squad List
+        document.getElementById('squad-list').innerHTML = players.map(p => `
+            <div class="card"><span>${p.name}</span><button onclick="players = players.filter(x=>x.name!=='${p.name}'); save(); render();">Delete</button></div>
+        `).join('');
+
+        // Training
+        document.getElementById('training-list').innerHTML = players.map(p => `
+            <div class="card">
+                <span>${p.name}</span>
+                <div>
+                    Tue <button class="att-btn ${p.tue?'present':''}" onclick="p.tue=!p.tue; save(); render();"></button>
+                    Thu <button class="att-btn ${p.thu?'present':''}" onclick="p.thu=!p.thu; save(); render();"></button>
+                </div>
+            </div>
+        `).join('');
+
+        // Pitch
+        ['Forwards', 'Midfield', 'Defense'].forEach(z => {
+            const zoneEl = document.getElementById('zone-'+z);
+            zoneEl.innerHTML = `<span class="zone-label">${z}</span>`;
+            players.filter(p => p.pos === z).forEach(p => {
+                const node = document.createElement('div');
+                node.className = 'player-icon';
+                node.innerText = p.name.split(' ').map(n=>n[0]).join('');
+                node.onclick = () => movePlayer(p.name);
+                zoneEl.appendChild(node);
+            });
+        });
+
+        // Subs
+        const subs = players.filter(p => p.pos === 'Sub').sort((a,b) => a.mins - b.mins);
+        document.getElementById('subs-list').innerHTML = subs.map(p => `
+            <div class="card" onclick="movePlayer('${p.name}')">
+                <span>${p.name} (Trained: ${p.tue&&p.thu?'2/2':'1/2'})</span>
+                <span style="font-weight:bold; color:var(--ios-blue)">${Math.round(p.mins)}m</span>
+            </div>
+        `).join('');
+    }
+
+    render();
+</script>
+</body>
+</html>
